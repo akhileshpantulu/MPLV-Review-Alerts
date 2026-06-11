@@ -1,0 +1,45 @@
+name: Marriott review check
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (UTC)
+  workflow_dispatch: {}      # allows manual "Run workflow" button
+
+permissions:
+  contents: write            # commit state.json back
+  issues: write              # open the alert issue
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check for new reviews
+        run: python check_reviews.py
+
+      - name: Open issue if new reviews found (GitHub emails you the issue)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f alert.md ]; then
+            gh issue create \
+              --title "$(cat alert_title.txt)" \
+              --body-file alert.md \
+              --repo "$GITHUB_REPOSITORY"
+            rm -f alert.md alert_title.txt
+          else
+            echo "No alert to send."
+          fi
+
+      - name: Commit updated state
+        run: |
+          git config user.name "review-bot"
+          git config user.email "actions@github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "Update review state [skip ci]"
+          git push
